@@ -6,11 +6,12 @@ import (
 	"image/color"
 	"log"
 	"math"
+	"ray-casting/internal/field"
+	"ray-casting/internal/ray_cast"
 	"ray-casting/pkg/helpers"
 	"ray-casting/pkg/vec"
 )
 
-const Wall = 1
 const Width = 12
 const Height = 12
 const BlockSize = 64
@@ -21,34 +22,41 @@ type intersection struct {
 }
 
 type Game struct {
-	filed  [Height][Width]int
+	f      field.Field
 	player vec.Vec2
 	pov    vec.Vec2
 	angel  float32
 	mouse  vec.Vec2
-	fov    float64
+	fov    float32
 	h      intersection
 	v      intersection
-	ray    vec.Vec2
+	rays   []vec.Vec2
 }
 
 func NewGame() *Game {
-	return &Game{
-		filed: [Height][Width]int{
+	f := field.NewField(
+		[][]field.BlockTypes{
 			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 			{1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1},
 			{1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1},
 			{1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1},
-			{1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1},
+			{1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1},
 			{1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1},
 			{1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1},
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
-		player: vec.NewVec2(float32((Width-1)*BlockSize)/2, float32((Height-1)*BlockSize)/2),
+		Width,
+		Height,
+		BlockSize,
+	)
+
+	return &Game{
+		f:      f,
+		player: vec.NewVec2(float32((Width-1)*BlockSize)*.5, float32((Height-1)*BlockSize)*.5),
 		fov:    math.Pi * 60 / 180, // 60 degrees
 	}
 }
@@ -70,93 +78,16 @@ func (g *Game) Update() error {
 
 	g.pov = vec.NewVec2(1, 0).Rot(g.angel)
 
-	g.h = intersection{}
-	g.v = intersection{}
+	// Calculate rays
+	g.rays = g.rays[:0]
 
-	// Horizontal intersection (iterable)
-	{
-		y := float32(0)
+	a := -g.fov * 0.5
+	da := g.fov / 640
 
-		if g.pov.Y > 0 {
-			y = float32(int(g.player.Y/BlockSize))*BlockSize + BlockSize
-		} else {
-			y = float32(int(g.player.Y/BlockSize))*BlockSize - 1 // -1 is offset for detection correct block
-		}
-
-		x := g.player.X + (y-g.player.Y)/float32(math.Tan(float64(g.angel)))
-
-		for x >= 0 && y >= 0 && x <= Width*BlockSize && y <= Height*BlockSize {
-			col, row := int(x/BlockSize), int(y/BlockSize)
-			if g.filed[row][col] == Wall {
-				g.h.exists = true
-				g.h.point = vec.NewVec2(x, y)
-				break
-			}
-
-			dy := float32(0)
-
-			if g.pov.Y > 0 {
-				dy = BlockSize
-			} else {
-				dy = -BlockSize
-			}
-
-			dx := dy / float32(math.Tan(float64(g.angel)))
-
-			x = x + dx
-			y = y + dy
-		}
-	}
-
-	// Vertical intersection
-	{
-		x := float32(0)
-
-		if g.pov.X > 0 {
-			x = float32(int(g.player.X/BlockSize))*BlockSize + BlockSize
-		} else {
-			x = float32(int(g.player.X/BlockSize))*BlockSize - 1 // -1 is offset for detection correct block
-		}
-
-		y := g.player.Y + (x-g.player.X)*float32(math.Tan(float64(g.angel)))
-
-		for x >= 0 && y >= 0 && x <= Width*BlockSize && y <= Height*BlockSize {
-			col, row := int(x/BlockSize), int(y/BlockSize)
-			if g.filed[row][col] == Wall {
-				g.v.exists = true
-				g.v.point = vec.NewVec2(x, y)
-				break
-			}
-
-			dx := float32(0)
-
-			if g.pov.X > 0 {
-				dx = BlockSize
-			} else {
-				dx = -BlockSize
-			}
-
-			dy := dx * float32(math.Tan(float64(g.angel)))
-
-			x = x + dx
-			y = y + dy
-
-		}
-	}
-
-	switch {
-	case g.h.exists && !g.v.exists:
-		g.ray = g.h.point
-	case !g.h.exists && g.v.exists:
-		g.ray = g.v.point
-	case g.h.exists && g.v.exists:
-		if g.h.point.Sub(g.player).Len() < g.v.point.Sub(g.player).Len() {
-			g.ray = g.h.point
-		} else {
-			g.ray = g.v.point
-		}
-	default:
-		g.ray = vec.NewVec2(0, 0)
+	for a <= g.fov*0.5 {
+		ray, _ := ray_cast.RayCast(g.f, g.player, g.angel+a)
+		a += da
+		g.rays = append(g.rays, ray)
 	}
 
 	return nil
@@ -172,7 +103,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		for col := range Width {
 			p := vec.NewVec2(float32(col), float32(row)).MulValue(BlockSize).Mul(scale)
 			d := vec.NewVec2(BlockSize, BlockSize).Mul(scale)
-			if g.filed[row][col] == Wall {
+
+			isWall, _ := g.f.IsBlockType(col, row, field.Wall)
+
+			if isWall {
 				vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0xFFFFFFFF), true)
 			} else {
 				vector.StrokeRect(screen, p.X, p.Y, d.X, d.Y, 1, helpers.Color(0xFFFFFFFF), true)
@@ -199,9 +133,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	// Ray
-	{
-		p := g.ray.Mul(scale)
-		vector.StrokeCircle(screen, p.X, p.Y, 5, 2, helpers.Color(0x0000FFFF), true)
+	for _, r := range g.rays {
+		p := g.player.Mul(scale)
+		r = r.Mul(scale)
+		vector.StrokeLine(screen, p.X, p.Y, r.X, r.Y, 1, color.RGBA{255, 0, 0, 255}, true)
 	}
 }
 
