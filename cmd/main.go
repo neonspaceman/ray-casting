@@ -13,13 +13,13 @@ import (
 	"ray-casting/pkg/vec"
 )
 
-const Width int = 12
-const Height int = 12
+const Width int = 24
+const Height int = 24
 const BlockSize float32 = 64
 const ProjectionPlaneWidth int = 640
 const ProjectionPlaceHeight int = 480
 const FOV float32 = 60 * math.Pi / 180 // 60 degree in rad
-var ProjectionDistance float32 = float32(ProjectionPlaneWidth) * .5 * float32(math.Tan(float64(FOV*.5)))
+var ProjectionDistance float32 = float32(ProjectionPlaneWidth) * .5 * float32(math.Tan(float64(FOV)))
 
 type rayCastResult struct {
 	angel    float32
@@ -38,18 +38,30 @@ type Game struct {
 func NewGame() *Game {
 	f := field.NewField(
 		[][]field.BlockTypes{
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1},
-			{1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1},
-			{1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1},
-			{1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1},
-			{1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1},
-			{1, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 0, 0, 0, 0, 5, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 0, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 		Width,
 		Height,
@@ -112,7 +124,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	for i := range ProjectionPlaneWidth {
 		ray := g.rays[i]
-		projectHeight := BlockSize / ray.distance * ProjectionDistance
+		projectHeight := BlockSize / (ray.distance * float32(math.Cos(float64(ray.angel-g.angel)))) * ProjectionDistance
 
 		from := h.Add(vec.NewVec2(float32(i), -projectHeight*.5))
 		to := from.Add(vec.NewVec2(0, projectHeight))
@@ -123,7 +135,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		//vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, color.RGBA{255, 0, 0, 255}, true)
 	}
 
-	scale := vec.Vec2{.25, .25}
+	scale := vec.Vec2{.1, .1}
 	offset := vec.NewVec2(float32(ProjectionPlaneWidth), float32(ProjectionPlaceHeight)).Sub(vec.NewVec2(BlockSize*float32(Width), BlockSize*float32(Height)).Mul(scale)).Sub(vec.NewVec2(20, 20))
 
 	// MAP
@@ -138,7 +150,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 				vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0xFFFFFFFF), true)
 			} else {
 				vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0x000000FF), true)
-				vector.StrokeRect(screen, p.X, p.Y, d.X, d.Y, 1, helpers.Color(0xFFFFFFFF), true)
 			}
 		}
 	}
@@ -164,7 +175,7 @@ func (g *Game) Layout(_, _ int) (int, int) {
 }
 
 func main() {
-	ebiten.SetWindowSize(640, 480)
+	ebiten.SetWindowSize(800, 600)
 	ebiten.SetWindowTitle("Ray-casting")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
