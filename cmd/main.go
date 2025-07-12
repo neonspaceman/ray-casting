@@ -7,171 +7,170 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"log"
 	"math"
-	"ray-casting/internal/field"
-	"ray-casting/internal/ray_cast"
+	"ray-casting/internal/camera"
+	"ray-casting/internal/player"
+	"ray-casting/internal/raycast"
+	"ray-casting/internal/scene"
 	"ray-casting/pkg/helpers"
 	"ray-casting/pkg/vec"
 )
 
-const Width int = 24
-const Height int = 24
+const SceneRows int = 24
+const SceneCols int = 24
 const BlockSize float32 = 64
-const ProjectionPlaneWidth int = 640
-const ProjectionPlaceHeight int = 480
-const FOV float32 = 60 * math.Pi / 180 // 60 degree in rad
-var ProjectionDistance float32 = float32(ProjectionPlaneWidth) * .5 * float32(math.Tan(float64(FOV)))
-
-type rayCastResult struct {
-	angel    float32
-	distance float32
-}
+const ProjectionPlaneWidth float32 = 640
+const ProjectionPlaneHeight float32 = 480
+const PlayerFOV int = 60
+const PlayerHeight float32 = 32
 
 type Game struct {
-	f        field.Field
-	position vec.Vec2
-	pov      vec.Vec2
-	angel    float32
-	mouse    vec.Vec2
-	rays     []rayCastResult
+	scene  scene.Scene
+	player player.Player
+	camera camera.Camera
 }
 
 func NewGame() *Game {
-	f := field.NewField(
-		[][]field.BlockTypes{
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 0, 0, 0, 0, 5, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 0, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		},
-		Width,
-		Height,
-		BlockSize,
-	)
-
 	return &Game{
-		f:        f,
-		position: vec.NewVec2((float32(Width-1)*BlockSize)*.5, (float32(Height-1)*BlockSize)*.5),
+		scene: scene.NewScene(
+			[][]scene.WallType{
+				{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 3, 0, 3, 0, 3, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 0, 0, 0, 0, 5, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 0, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			},
+			SceneRows,
+			SceneCols,
+			BlockSize,
+		),
+		player: player.NewPlayer(
+			vec.NewVec2((float32(SceneRows-1)*BlockSize)*.5, (float32(SceneCols-1)*BlockSize)*.5),
+			0,
+		),
+		camera: camera.NewCamera(
+			ProjectionPlaneWidth,
+			ProjectionPlaneHeight,
+			PlayerFOV,
+			PlayerHeight,
+		),
 	}
 }
 
 func (g *Game) Update() error {
 	if ebiten.IsKeyPressed(ebiten.KeyW) {
-		g.position = g.position.Add(vec.NewVec2(1, 0).Rot(g.angel).MulValue(2))
+		g.player.Up(2)
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyA) {
-		g.angel -= math.Pi / 40
-		if g.angel < 0 {
-			g.angel = 2 * math.Pi
-		}
+		g.player.Left(math.Pi / 40)
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyD) {
-		g.angel += math.Pi / 40
-		if g.angel > 2*math.Pi {
-			g.angel = 0
-		}
+		g.player.Right(math.Pi / 40)
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyS) {
-		g.position = g.position.Add(vec.NewVec2(1, 0).Rot(g.angel + math.Pi).MulValue(2))
-	}
-
-	//mouseX, mouseY := ebiten.CursorPosition()
-	//g.mouse = vec.NewVec2(float32(mouseX), float32(mouseY))
-	//g.angel = g.mouse.Sub(g.position).Rad()
-
-	// Calculate rays
-	g.rays = g.rays[:0]
-
-	for a := -FOV * .5; a <= FOV*.5; a += FOV / float32(ProjectionPlaneWidth) {
-		angel := g.angel + float32(a)
-		distance := ray_cast.RayCast(g.f, g.position, angel)
-		g.rays = append(g.rays, rayCastResult{
-			angel:    angel,
-			distance: distance,
-		})
+		g.player.Down(2)
 	}
 
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("%#v, %f", g.position, g.angel))
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("%#v, %f", g.player.Pos, g.player.Angel))
 
+	g.renderWall(screen)
+
+	scale := float32(.1)
+	offset := vec.NewVec2(float32(ProjectionPlaneWidth), float32(ProjectionPlaneHeight)).Sub(vec.NewVec2(BlockSize*float32(SceneRows), BlockSize*float32(SceneCols)).MulValue(scale)).Sub(vec.NewVec2(20, 20))
+	g.renderMinimap(screen, offset, scale)
+}
+
+func (g *Game) Layout(_, _ int) (int, int) {
+	return int(g.camera.ProjectionPlaneWidth), int(g.camera.ProjectionPlaneHeight)
+}
+
+func (g *Game) renderWall(screen *ebiten.Image) {
 	// 2.5D
-	h := vec.NewVec2(0, float32(ProjectionPlaceHeight)*.5)
+	h := vec.NewVec2(0, float32(ProjectionPlaneHeight)*.5)
 
-	for i := range ProjectionPlaneWidth {
-		ray := g.rays[i]
-		projectHeight := BlockSize / (ray.distance * float32(math.Cos(float64(ray.angel-g.angel)))) * ProjectionDistance
+	a := -g.camera.FOV * .5
 
-		from := h.Add(vec.NewVec2(float32(i), -projectHeight*.5))
-		to := from.Add(vec.NewVec2(0, projectHeight))
+	for i := range int(g.camera.ProjectionPlaneWidth) {
+		distance := raycast.Cast(g.scene, g.player.Pos, g.player.Angel+a)
+
+		sliceHeight := BlockSize / (distance * float32(math.Cos(float64(a)))) * g.camera.ProjectionPlaneDistance
+
+		from := h.Add(vec.NewVec2(float32(i), -sliceHeight*.5))
+		to := from.Add(vec.NewVec2(0, sliceHeight))
 
 		vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, helpers.Color(0xFFFFFFFF), true)
-		//from := g.position.Mul(scale)
-		//to := g.position.Add(vec.NewVec2(1, 0).Rot(r.angel).MulValue(r.distance)).Mul(scale)
-		//vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, color.RGBA{255, 0, 0, 255}, true)
+
+		a += g.camera.FOV / g.camera.ProjectionPlaneWidth
 	}
+}
 
-	scale := vec.Vec2{.1, .1}
-	offset := vec.NewVec2(float32(ProjectionPlaneWidth), float32(ProjectionPlaceHeight)).Sub(vec.NewVec2(BlockSize*float32(Width), BlockSize*float32(Height)).Mul(scale)).Sub(vec.NewVec2(20, 20))
+func (g *Game) renderMinimap(screen *ebiten.Image, offset vec.Vec2, scale float32) {
+	{
+		for row := range g.scene.Rows {
+			for col := range g.scene.Cols {
+				p := vec.NewVec2(float32(col), float32(row)).MulValue(BlockSize).MulValue(scale).Add(offset)
+				d := vec.NewVec2(BlockSize, BlockSize).MulValue(scale)
 
-	// MAP
-	for row := range Height {
-		for col := range Width {
-			p := vec.NewVec2(float32(col), float32(row)).MulValue(BlockSize).Mul(scale).Add(offset)
-			d := vec.NewVec2(BlockSize, BlockSize).Mul(scale)
+				wallType := g.scene.Walls[row][col]
 
-			isWall, _ := g.f.IsBlockType(col, row, field.Wall)
-
-			if isWall {
-				vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0xFFFFFFFF), true)
-			} else {
-				vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0x000000FF), true)
+				if wallType != scene.None {
+					vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0xFFFFFFFF), true)
+				} else {
+					vector.DrawFilledRect(screen, p.X, p.Y, d.X, d.Y, helpers.Color(0x000000FF), true)
+				}
 			}
 		}
 	}
 
-	// Player
+	//Player
 	{
-		p := g.position.Mul(scale).Add(offset)
-		vector.DrawFilledCircle(screen, p.X, p.Y, 1, helpers.Color(0xFF0000FF), true)
-		//pov := g.position.Add(g.pov.MulValue(100)).Mul(scale)
-		//vector.StrokeLine(screen, p.X, p.Y, pov.X, pov.Y, 2, helpers.Color(0xFF0000FF), true)
+		from := g.player.Pos.MulValue(scale).Add(offset)
+
+		to1 := g.player.Pos.Add(vec.NewRotated(g.player.Angel - g.camera.FOV*.5).MulValue(300)).MulValue(scale).Add(offset)
+		to2 := g.player.Pos.Add(vec.NewRotated(g.player.Angel + g.camera.FOV*.5).MulValue(300)).MulValue(scale).Add(offset)
+
+		vector.DrawFilledCircle(screen, from.X, from.Y, 3, helpers.Color(0xFF0000FF), true)
+		vector.StrokeLine(screen, from.X, from.Y, to1.X, to1.Y, 2, helpers.Color(0xFF0000FF), true)
+		vector.StrokeLine(screen, from.X, from.Y, to2.X, to2.Y, 2, helpers.Color(0xFF0000FF), true)
 	}
 
 	// Rays
-	for _, ray := range g.rays {
-		p := g.position.Mul(scale).Add(offset)
-		r := g.position.Add(vec.NewVec2(1, 0).Rot(ray.angel).MulValue(ray.distance)).Mul(scale).Add(offset)
-		vector.StrokeLine(screen, p.X, p.Y, r.X, r.Y, 1, helpers.Color(0xFF0000FF), true)
-	}
+	//a := -g.camera.FOV * .5
+	//
+	//for i := range int(g.camera.ProjectionPlaneWidth) {
+	//	p := g.position.Mul(scale).Add(offset)
+	//	r := g.position.Add(vec.NewVec2(1, 0).Rot(ray.angel).MulValue(ray.distance)).Mul(scale).Add(offset)
+	//	vector.StrokeLine(screen, p.X, p.Y, r.X, r.Y, 1, helpers.Color(0xFF0000FF), true)
+	//}
 }
 
-func (g *Game) Layout(_, _ int) (int, int) {
-	return ProjectionPlaneWidth, ProjectionPlaceHeight
+func (g *Game) renderFloor() {
+
 }
 
 func main() {

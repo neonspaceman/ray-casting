@@ -12,6 +12,10 @@ func NewVec2(x, y float32) Vec2 {
 	return Vec2{X: x, Y: y}
 }
 
+func NewRotated(angel float32) Vec2 {
+	return Vec2{X: 1, Y: 0}.Rot(angel)
+}
+
 func (v Vec2) Add(other Vec2) Vec2 {
 	return Vec2{X: v.X + other.X, Y: v.Y + other.Y}
 }
