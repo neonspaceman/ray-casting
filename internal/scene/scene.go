@@ -4,7 +4,6 @@ type WallType int
 
 const (
 	None WallType = iota
-	Wall
 )
 
 type Scene struct {

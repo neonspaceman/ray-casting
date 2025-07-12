@@ -2,59 +2,64 @@ package raycast
 
 import (
 	"math"
-	"ray-casting/internal/scene"
+	scenePkg "ray-casting/internal/scene"
 	"ray-casting/pkg/vec"
 )
 
-func Cast(scene scene.Scene, pos vec.Vec2, rad float32) float32 {
-	hPoint, hOk := horizontalRayCast(scene, pos, rad)
-	vPoint, vOk := verticalRayCast(scene, pos, rad)
+func Cast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (float32, int, scenePkg.WallType) {
+	hPoint, hWallOffset, hWallType, hOk := horizontalRayCast(scene, pos, rad)
+	vPoint, vWallOffset, vWallType, vOk := verticalRayCast(scene, pos, rad)
 
 	switch {
 	case hOk && !vOk:
-		return hPoint.Sub(pos).Len()
+		return hPoint.Sub(pos).Len(), hWallOffset, hWallType
 	case !hOk && vOk:
-		return vPoint.Sub(pos).Len()
+		return vPoint.Sub(pos).Len(), vWallOffset, vWallType
 	case hOk && vOk:
-		return float32(math.Min(float64(hPoint.Sub(pos).Len()), float64(vPoint.Sub(pos).Len())))
+		hLen, vLen := hPoint.Sub(pos).Len(), vPoint.Sub(pos).Len()
+		if hLen <= vLen {
+			return hLen, hWallOffset, hWallType
+		} else {
+			return vLen, vWallOffset, vWallType
+		}
 	}
 
-	return math.MaxFloat32
+	return math.MaxFloat32, 0, 0
 }
 
-func horizontalRayCast(f scene.Scene, pos vec.Vec2, rad float32) (vec.Vec2, bool) {
+func horizontalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, scenePkg.WallType, bool) {
 	ray := vec.NewVec2(1, 0).Rot(rad)
 
 	y := float32(0)
 	correction := float32(0)
 
 	if ray.Y > 0 {
-		y = float32(int(pos.Y/f.BlockSize))*f.BlockSize + f.BlockSize
+		y = float32(int(pos.Y/scene.BlockSize))*scene.BlockSize + scene.BlockSize
 	} else {
 		// Due to x, y are used to detect col and row, we need offset 1, to correct detection col and row
-		y = float32(int(pos.Y/f.BlockSize)) * f.BlockSize
+		y = float32(int(pos.Y/scene.BlockSize)) * scene.BlockSize
 		correction = 1
 	}
 
 	x := pos.X + (y-pos.Y)/float32(math.Tan(float64(rad)))
 
 	for {
-		wall, err := f.WallType(x, y-correction)
+		wall, err := scene.WallType(x, y-correction)
 
 		if err != nil {
 			break
 		}
 
-		if wall != scene.None {
-			return vec.NewVec2(x, y), true
+		if wall != scenePkg.None {
+			return vec.NewVec2(x, y), int(x) % int(scene.BlockSize), wall, true
 		}
 
 		dy := float32(0)
 
 		if ray.Y > 0 {
-			dy = f.BlockSize
+			dy = scene.BlockSize
 		} else {
-			dy = -f.BlockSize
+			dy = -scene.BlockSize
 		}
 
 		dx := dy / float32(math.Tan(float64(rad)))
@@ -63,42 +68,42 @@ func horizontalRayCast(f scene.Scene, pos vec.Vec2, rad float32) (vec.Vec2, bool
 		y = y + dy
 	}
 
-	return vec.Vec2{}, false
+	return vec.Vec2{}, 0, 0, false
 }
 
-func verticalRayCast(f scene.Scene, pos vec.Vec2, rad float32) (vec.Vec2, bool) {
+func verticalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, scenePkg.WallType, bool) {
 	ray := vec.NewVec2(1, 0).Rot(rad)
 
 	x := float32(0)
 	correction := float32(0)
 
 	if ray.X > 0 {
-		x = float32(int(pos.X/f.BlockSize))*f.BlockSize + f.BlockSize
+		x = float32(int(pos.X/scene.BlockSize))*scene.BlockSize + scene.BlockSize
 	} else {
 		// Due to x, y are used to detect col and row, we need offset 1, to correct detection col and row
-		x = float32(int(pos.X/f.BlockSize)) * f.BlockSize
+		x = float32(int(pos.X/scene.BlockSize)) * scene.BlockSize
 		correction = 1
 	}
 
 	y := pos.Y + (x-pos.X)*float32(math.Tan(float64(rad)))
 
 	for {
-		wall, err := f.WallType(x-correction, y)
+		wall, err := scene.WallType(x-correction, y)
 
 		if err != nil {
 			break
 		}
 
-		if wall != scene.None {
-			return vec.NewVec2(x, y), true
+		if wall != scenePkg.None {
+			return vec.NewVec2(x, y), int(scene.BlockSize) - int(y)%int(scene.BlockSize) - 1, wall, true
 		}
 
 		dx := float32(0)
 
 		if ray.X > 0 {
-			dx = f.BlockSize
+			dx = scene.BlockSize
 		} else {
-			dx = -f.BlockSize
+			dx = -scene.BlockSize
 		}
 
 		dy := dx * float32(math.Tan(float64(rad)))
@@ -107,5 +112,5 @@ func verticalRayCast(f scene.Scene, pos vec.Vec2, rad float32) (vec.Vec2, bool) 
 		y = y + dy
 	}
 
-	return vec.Vec2{}, false
+	return vec.Vec2{}, 0, 0, false
 }

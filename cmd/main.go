@@ -5,6 +5,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
+	"image"
 	"log"
 	"math"
 	"ray-casting/internal/camera"
@@ -15,18 +16,26 @@ import (
 	"ray-casting/pkg/vec"
 )
 
-const SceneRows int = 24
-const SceneCols int = 24
-const BlockSize float32 = 64
-const ProjectionPlaneWidth float32 = 640
-const ProjectionPlaneHeight float32 = 480
-const PlayerFOV int = 60
-const PlayerHeight float32 = 32
+const sceneRows int = 24
+const sceneCols int = 24
+const blockSize float32 = 64
+const projectionPlaneWidth float32 = 640
+const projectionPlaneHeight float32 = 480
+const playerFOV int = 60
+const playerHeight float32 = 32
+
+var wallTextures = map[scene.WallType]string{
+	1: "assets/Bark.png",
+	2: "assets/WalkStone.png",
+	3: "assets/WalkStone.png",
+	4: "assets/WalkStone.png",
+}
 
 type Game struct {
-	scene  scene.Scene
-	player player.Player
-	camera camera.Camera
+	scene        scene.Scene
+	player       player.Player
+	camera       camera.Camera
+	wallTextures map[scene.WallType]*ebiten.Image
 }
 
 func NewGame() *Game {
@@ -58,20 +67,21 @@ func NewGame() *Game {
 				{1, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 				{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 			},
-			SceneRows,
-			SceneCols,
-			BlockSize,
+			sceneRows,
+			sceneCols,
+			blockSize,
 		),
 		player: player.NewPlayer(
-			vec.NewVec2((float32(SceneRows-1)*BlockSize)*.5, (float32(SceneCols-1)*BlockSize)*.5),
+			vec.NewVec2((float32(sceneRows-1)*blockSize)*.5, (float32(sceneCols-1)*blockSize)*.5),
 			0,
 		),
 		camera: camera.NewCamera(
-			ProjectionPlaneWidth,
-			ProjectionPlaneHeight,
-			PlayerFOV,
-			PlayerHeight,
+			projectionPlaneWidth,
+			projectionPlaneHeight,
+			playerFOV,
+			playerHeight,
 		),
+		wallTextures: make(map[scene.WallType]*ebiten.Image),
 	}
 }
 
@@ -101,7 +111,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.renderWall(screen)
 
 	scale := float32(.1)
-	offset := vec.NewVec2(float32(ProjectionPlaneWidth), float32(ProjectionPlaneHeight)).Sub(vec.NewVec2(BlockSize*float32(SceneRows), BlockSize*float32(SceneCols)).MulValue(scale)).Sub(vec.NewVec2(20, 20))
+	offset := vec.NewVec2(g.camera.ProjectionPlaneWidth, g.camera.ProjectionPlaneHeight).Sub(vec.NewVec2(g.scene.Width, g.scene.Height).MulValue(scale)).Sub(vec.NewVec2(20, 20))
 	g.renderMinimap(screen, offset, scale)
 }
 
@@ -109,32 +119,55 @@ func (g *Game) Layout(_, _ int) (int, int) {
 	return int(g.camera.ProjectionPlaneWidth), int(g.camera.ProjectionPlaneHeight)
 }
 
+func (g *Game) LoadWallTexture(wallType scene.WallType, path string) error {
+	t, _, err := ebitenutil.NewImageFromFile(path)
+
+	if err != nil {
+		return err
+	}
+
+	g.wallTextures[wallType] = t
+
+	return nil
+}
+
 func (g *Game) renderWall(screen *ebiten.Image) {
-	// 2.5D
-	h := vec.NewVec2(0, float32(ProjectionPlaneHeight)*.5)
+	h := vec.NewVec2(0, float32(g.camera.ProjectionPlaneHeight)*.5)
 
 	a := -g.camera.FOV * .5
 
 	for i := range int(g.camera.ProjectionPlaneWidth) {
-		distance := raycast.Cast(g.scene, g.player.Pos, g.player.Angel+a)
+		distance, wallOffset, wall := raycast.Cast(g.scene, g.player.Pos, g.player.Angel+a)
 
-		sliceHeight := BlockSize / (distance * float32(math.Cos(float64(a)))) * g.camera.ProjectionPlaneDistance
+		sliceHeight := g.scene.BlockSize / (distance * float32(math.Cos(float64(a)))) * g.camera.ProjectionPlaneDistance
 
 		from := h.Add(vec.NewVec2(float32(i), -sliceHeight*.5))
 		to := from.Add(vec.NewVec2(0, sliceHeight))
 
-		vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, helpers.Color(0xFFFFFFFF), true)
+		if texture, ok := g.wallTextures[wall]; ok {
+			crop := texture.SubImage(image.Rect(wallOffset, 0, wallOffset+1, texture.Bounds().Dy())).(*ebiten.Image)
+
+			opts := ebiten.DrawImageOptions{}
+			opts.GeoM.Scale(1, float64(sliceHeight/g.scene.BlockSize))
+			opts.GeoM.Translate(float64(from.X), float64(from.Y))
+			opts.ColorScale.Scale(160/distance, 160/distance, 160/distance, 1)
+
+			screen.DrawImage(crop, &opts)
+		} else {
+			vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, helpers.Color(0xFFFFFFFF), true)
+		}
 
 		a += g.camera.FOV / g.camera.ProjectionPlaneWidth
 	}
 }
 
 func (g *Game) renderMinimap(screen *ebiten.Image, offset vec.Vec2, scale float32) {
+	// MAP
 	{
 		for row := range g.scene.Rows {
 			for col := range g.scene.Cols {
-				p := vec.NewVec2(float32(col), float32(row)).MulValue(BlockSize).MulValue(scale).Add(offset)
-				d := vec.NewVec2(BlockSize, BlockSize).MulValue(scale)
+				p := vec.NewVec2(float32(col), float32(row)).MulValue(blockSize).MulValue(scale).Add(offset)
+				d := vec.NewVec2(blockSize, blockSize).MulValue(scale)
 
 				wallType := g.scene.Walls[row][col]
 
@@ -158,15 +191,6 @@ func (g *Game) renderMinimap(screen *ebiten.Image, offset vec.Vec2, scale float3
 		vector.StrokeLine(screen, from.X, from.Y, to1.X, to1.Y, 2, helpers.Color(0xFF0000FF), true)
 		vector.StrokeLine(screen, from.X, from.Y, to2.X, to2.Y, 2, helpers.Color(0xFF0000FF), true)
 	}
-
-	// Rays
-	//a := -g.camera.FOV * .5
-	//
-	//for i := range int(g.camera.ProjectionPlaneWidth) {
-	//	p := g.position.Mul(scale).Add(offset)
-	//	r := g.position.Add(vec.NewVec2(1, 0).Rot(ray.angel).MulValue(ray.distance)).Mul(scale).Add(offset)
-	//	vector.StrokeLine(screen, p.X, p.Y, r.X, r.Y, 1, helpers.Color(0xFF0000FF), true)
-	//}
 }
 
 func (g *Game) renderFloor() {
@@ -174,9 +198,18 @@ func (g *Game) renderFloor() {
 }
 
 func main() {
+	game := NewGame()
+
+	for wallType, path := range wallTextures {
+		err := game.LoadWallTexture(wallType, path)
+		if err != nil {
+			log.Fatal("unable to load texture: ", err)
+		}
+	}
+
 	ebiten.SetWindowSize(800, 600)
 	ebiten.SetWindowTitle("Ray-casting")
-	if err := ebiten.RunGame(NewGame()); err != nil {
+	if err := ebiten.RunGame(game); err != nil {
 		log.Fatal(err)
 	}
 }
