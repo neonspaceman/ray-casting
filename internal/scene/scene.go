@@ -1,13 +1,23 @@
 package scene
 
+import "ray-casting/pkg/vec"
+
+type SpriteType int
+
 type WallType int
 
 const (
 	None WallType = iota
 )
 
+type Sprite struct {
+	pos vec.Vec2
+	t   SpriteType
+}
+
 type Scene struct {
 	Walls     [][]WallType
+	Sprites   []Sprite
 	Cols      int
 	Rows      int
 	Width     float32
@@ -15,9 +25,10 @@ type Scene struct {
 	BlockSize float32
 }
 
-func NewScene(walls [][]WallType, cols, rows int, blockSize float32) Scene {
+func NewScene(walls [][]WallType, cols, rows int, blockSize float32, sprites []Sprite) Scene {
 	return Scene{
 		Walls:     walls,
+		Sprites:   sprites,
 		Cols:      cols,
 		Rows:      rows,
 		Width:     float32(cols) * blockSize,

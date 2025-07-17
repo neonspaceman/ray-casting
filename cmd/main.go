@@ -5,7 +5,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
-	"image"
+	"image/color"
 	"log"
 	"math"
 	"ray-casting/internal/camera"
@@ -19,8 +19,8 @@ import (
 const sceneRows int = 24
 const sceneCols int = 24
 const blockSize float32 = 64
-const projectionPlaneWidth float32 = 640
-const projectionPlaneHeight float32 = 480
+const projectionPlaneWidth float32 = 320
+const projectionPlaneHeight float32 = 240
 const playerFOV int = 60
 const playerHeight float32 = 32
 
@@ -31,11 +31,17 @@ var wallTextures = map[scene.WallType]string{
 	4: "assets/WalkStone.png",
 }
 
+var spriteTextures = map[int]string{
+	1: "assets/Coin.png",
+}
+
 type Game struct {
 	scene        scene.Scene
 	player       player.Player
 	camera       camera.Camera
 	wallTextures map[scene.WallType]*ebiten.Image
+	pixels       []byte
+	zBuffer      []int
 }
 
 func NewGame() *Game {
@@ -70,6 +76,7 @@ func NewGame() *Game {
 			sceneRows,
 			sceneCols,
 			blockSize,
+			[]scene.Sprite{},
 		),
 		player: player.NewPlayer(
 			vec.NewVec2((float32(sceneRows-1)*blockSize)*.5, (float32(sceneCols-1)*blockSize)*.5),
@@ -82,6 +89,7 @@ func NewGame() *Game {
 			playerHeight,
 		),
 		wallTextures: make(map[scene.WallType]*ebiten.Image),
+		pixels:       make([]byte, int(projectionPlaneWidth)*int(projectionPlaneHeight)*4),
 	}
 }
 
@@ -106,13 +114,21 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("%#v, %f", g.player.Pos, g.player.Angel))
+	g.clearPixels()
+	g.renderFloor()
+	g.renderCell()
+	g.renderWall()
 
-	g.renderWall(screen)
+	screen.WritePixels(g.pixels)
 
-	scale := float32(.1)
-	offset := vec.NewVec2(g.camera.ProjectionPlaneWidth, g.camera.ProjectionPlaneHeight).Sub(vec.NewVec2(g.scene.Width, g.scene.Height).MulValue(scale)).Sub(vec.NewVec2(20, 20))
-	g.renderMinimap(screen, offset, scale)
+	//opts := ebiten.DrawImageOptions{}
+	//screen.DrawImage(g.wallTextures[scene.WallType(5)], &opts)
+
+	//scale := float32(.1)
+	//offset := vec.NewVec2(g.camera.ProjectionPlaneWidth, g.camera.ProjectionPlaneHeight).Sub(vec.NewVec2(g.scene.Width, g.scene.Height).MulValue(scale)).Sub(vec.NewVec2(20, 20))
+	//g.renderMinimap(screen, offset, scale)
+	//
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("%#v, %f\nFPS: %f", g.player.Pos, g.player.Angel, ebiten.ActualFPS()))
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {
@@ -131,34 +147,37 @@ func (g *Game) LoadWallTexture(wallType scene.WallType, path string) error {
 	return nil
 }
 
-func (g *Game) renderWall(screen *ebiten.Image) {
-	h := vec.NewVec2(0, float32(g.camera.ProjectionPlaneHeight)*.5)
+func (g *Game) renderWall() {
+	h := g.camera.ProjectionPlaneHeight * .5
 
 	a := -g.camera.FOV * .5
 
-	for i := range int(g.camera.ProjectionPlaneWidth) {
+	for x := float32(0); x < g.camera.ProjectionPlaneWidth; x++ {
 		distance, wallOffset, wall := raycast.Cast(g.scene, g.player.Pos, g.player.Angel+a)
 
+		brightness := float32(160 / distance)
 		sliceHeight := g.scene.BlockSize / (distance * float32(math.Cos(float64(a)))) * g.camera.ProjectionPlaneDistance
 
-		from := h.Add(vec.NewVec2(float32(i), -sliceHeight*.5))
-		to := from.Add(vec.NewVec2(0, sliceHeight))
-
 		if texture, ok := g.wallTextures[wall]; ok {
-			crop := texture.SubImage(image.Rect(wallOffset, 0, wallOffset+1, texture.Bounds().Dy())).(*ebiten.Image)
+			ratio := g.scene.BlockSize / sliceHeight
+			ty := float32(0)
 
-			opts := ebiten.DrawImageOptions{}
-			opts.GeoM.Scale(1, float64(sliceHeight/g.scene.BlockSize))
-			opts.GeoM.Translate(float64(from.X), float64(from.Y))
-			opts.ColorScale.Scale(160/distance, 160/distance, 160/distance, 1)
+			for y := h - sliceHeight*.5; y <= h+sliceHeight*.5; y += 1 {
+				clr := texture.At(wallOffset, int(ty)).(color.RGBA)
 
-			screen.DrawImage(crop, &opts)
+				g.setPixel(x, y, float32(clr.R)*brightness, float32(clr.G)*brightness, float32(clr.B)*brightness, float32(clr.A))
+
+				ty += ratio
+			}
 		} else {
-			vector.StrokeLine(screen, from.X, from.Y, to.X, to.Y, 1, helpers.Color(0xFFFFFFFF), true)
+			for y := h - sliceHeight*.5; y <= h+sliceHeight*.5; y += 1 {
+				g.setPixel(x, y, 255*brightness, 255*brightness, 255*brightness, 255)
+			}
 		}
 
 		a += g.camera.FOV / g.camera.ProjectionPlaneWidth
 	}
+
 }
 
 func (g *Game) renderMinimap(screen *ebiten.Image, offset vec.Vec2, scale float32) {
@@ -193,8 +212,90 @@ func (g *Game) renderMinimap(screen *ebiten.Image, offset vec.Vec2, scale float3
 	}
 }
 
-func (g *Game) renderFloor() {
+// clampColor ensures a color value stays within 0-255 range
+func clampColor(value float32) uint8 {
+	return uint8(math.Max(0, math.Min(255, math.Round(float64(value)))))
+}
 
+func (g *Game) renderFloor() {
+	for y := g.camera.ProjectionPlaneHeight*.5 + 1; y < g.camera.ProjectionPlaneHeight; y += 1 {
+		a := -g.camera.FOV * .5
+		ratio := g.camera.Z / (y - g.camera.ProjectionPlaneHeight*.5)
+
+		for x := float32(0); x < g.camera.ProjectionPlaneWidth; x += 1 {
+			distance := g.camera.ProjectionPlaneDistance * ratio / float32(math.Cos(float64(a)))
+
+			t := g.player.Pos.Add(vec.NewRotated(g.player.Angel + a).MulValue(distance))
+
+			cellX := t.X / g.scene.BlockSize
+			cellY := t.Y / g.scene.BlockSize
+			brightness := float32(100 / distance)
+
+			//clr := g.wallTextures[scene.WallType(1)].At(int(t.X)%int(g.scene.BlockSize), int(t.Y)%int(g.scene.BlockSize)).(color.RGBA)
+			//g.setPixel(x, y, float32(clr.R)*brightness, float32(clr.G)*brightness, float32(clr.B)*brightness, float32(clr.A))
+
+			if (int(cellX)+int(cellY))%2 == 0 {
+				g.setPixel(x, y, 255*brightness, 0, 0, 255)
+				//screen.DrawImage()
+				//vector.DrawFilledRect(screen, x, y, 1, 1, ScaleRGBA(color.RGBA{0, 0, 255, 255}, brightness, brightness, brightness, 1), true)
+			} else {
+				g.setPixel(x, y, 0, 0, 255*brightness, 255)
+				//vector.DrawFilledRect(screen, x, y, 1, 1, ScaleRGBA(color.RGBA{255, 0, 0, 255}, brightness, brightness, brightness, 1), true)
+			}
+
+			a += g.camera.FOV / g.camera.ProjectionPlaneWidth
+		}
+	}
+	// for y := g.camera.ProjectionPlaneHeight/2 + 1; y < g.camera.ProjectionPlaneHeight; y += 1 {
+}
+
+func (g *Game) renderCell() {
+	for y := float32(0); y <= g.camera.ProjectionPlaneHeight*.5; y += 1 {
+		a := -g.camera.FOV * .5
+		ratio := g.camera.Z / (g.camera.ProjectionPlaneHeight*.5 - y)
+
+		for x := float32(0); x < g.camera.ProjectionPlaneWidth; x += 1 {
+			distance := g.camera.ProjectionPlaneDistance * ratio / float32(math.Cos(float64(a)))
+
+			t := g.player.Pos.Add(vec.NewRotated(g.player.Angel + a).MulValue(distance))
+
+			cellX := t.X / g.scene.BlockSize
+			cellY := t.Y / g.scene.BlockSize
+			brightness := float32(100 / distance)
+
+			//clr := g.wallTextures[scene.WallType(1)].At(int(t.X)%int(g.scene.BlockSize), int(t.Y)%int(g.scene.BlockSize)).(color.RGBA)
+			//g.setPixel(x, y, float32(clr.R)*brightness, float32(clr.G)*brightness, float32(clr.B)*brightness, float32(clr.A))
+
+			if (int(cellX)+int(cellY))%2 == 0 {
+				g.setPixel(x, y, 255*brightness, 0, 0, 255)
+				//screen.DrawImage()
+				//vector.DrawFilledRect(screen, x, y, 1, 1, ScaleRGBA(color.RGBA{0, 0, 255, 255}, brightness, brightness, brightness, 1), true)
+			} else {
+				g.setPixel(x, y, 0, 0, 255*brightness, 255)
+				//vector.DrawFilledRect(screen, x, y, 1, 1, ScaleRGBA(color.RGBA{255, 0, 0, 255}, brightness, brightness, brightness, 1), true)
+			}
+
+			a += g.camera.FOV / g.camera.ProjectionPlaneWidth
+		}
+	}
+	// for y := g.camera.ProjectionPlaneHeight/2 + 1; y < g.camera.ProjectionPlaneHeight; y += 1 {
+}
+
+func (g *Game) setPixel(x, y float32, rc, gc, bc, ac float32) {
+	if x < 0 || x >= g.camera.ProjectionPlaneWidth || y < 0 || y >= g.camera.ProjectionPlaneHeight {
+		return
+	}
+
+	g.pixels[int(y)*int(g.camera.ProjectionPlaneWidth)*4+int(x)*4] = clampColor(rc)
+	g.pixels[int(y)*int(g.camera.ProjectionPlaneWidth)*4+int(x)*4+1] = clampColor(gc)
+	g.pixels[int(y)*int(g.camera.ProjectionPlaneWidth)*4+int(x)*4+2] = clampColor(bc)
+	g.pixels[int(y)*int(g.camera.ProjectionPlaneWidth)*4+int(x)*4+3] = clampColor(ac)
+}
+
+func (g *Game) clearPixels() {
+	for i := range g.pixels {
+		g.pixels[i] = 0
+	}
 }
 
 func main() {
