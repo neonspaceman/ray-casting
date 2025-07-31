@@ -40,8 +40,16 @@ func (v Vec2) DivValue(value float32) Vec2 {
 	return Vec2{X: v.X / value, Y: v.Y / value}
 }
 
+// Rad
+// Angel from 0 to 2 * PI clockwise
 func (v Vec2) Rad() float32 {
-	return float32(math.Atan2(float64(v.Y), float64(v.X)))
+	a := -math.Atan2(float64(-v.Y), float64(v.X))
+
+	if a < 0 {
+		a += 2 * math.Pi
+	}
+
+	return float32(a)
 }
 
 func (v Vec2) Len() float32 {

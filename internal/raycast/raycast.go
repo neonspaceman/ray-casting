@@ -6,7 +6,7 @@ import (
 	"ray-casting/pkg/vec"
 )
 
-func Cast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (float32, int, scenePkg.WallType) {
+func Cast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (float32, int, int) {
 	hPoint, hWallOffset, hWallType, hOk := horizontalRayCast(scene, pos, rad)
 	vPoint, vWallOffset, vWallType, vOk := verticalRayCast(scene, pos, rad)
 
@@ -27,7 +27,7 @@ func Cast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (float32, int, sceneP
 	return math.MaxFloat32, 0, 0
 }
 
-func horizontalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, scenePkg.WallType, bool) {
+func horizontalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, int, bool) {
 	ray := vec.NewVec2(1, 0).Rot(rad)
 
 	y := float32(0)
@@ -71,7 +71,7 @@ func horizontalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec
 	return vec.Vec2{}, 0, 0, false
 }
 
-func verticalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, scenePkg.WallType, bool) {
+func verticalRayCast(scene scenePkg.Scene, pos vec.Vec2, rad float32) (vec.Vec2, int, int, bool) {
 	ray := vec.NewVec2(1, 0).Rot(rad)
 
 	x := float32(0)

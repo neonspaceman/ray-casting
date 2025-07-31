@@ -2,21 +2,17 @@ package scene
 
 import "ray-casting/pkg/vec"
 
-type SpriteType int
-
-type WallType int
-
 const (
-	None WallType = iota
+	None int = iota
 )
 
 type Sprite struct {
-	pos vec.Vec2
-	t   SpriteType
+	Pos  vec.Vec2
+	Type int
 }
 
 type Scene struct {
-	Walls     [][]WallType
+	Walls     [][]int
 	Sprites   []Sprite
 	Cols      int
 	Rows      int
@@ -25,7 +21,7 @@ type Scene struct {
 	BlockSize float32
 }
 
-func NewScene(walls [][]WallType, cols, rows int, blockSize float32, sprites []Sprite) Scene {
+func NewScene(walls [][]int, cols, rows int, blockSize float32, sprites []Sprite) Scene {
 	return Scene{
 		Walls:     walls,
 		Sprites:   sprites,
@@ -37,7 +33,7 @@ func NewScene(walls [][]WallType, cols, rows int, blockSize float32, sprites []S
 	}
 }
 
-func (f *Scene) WallType(x, y float32) (WallType, error) {
+func (f *Scene) WallType(x, y float32) (int, error) {
 	if x < 0 || y < 0 || x >= f.Height || y >= f.Width {
 		return 0, ErrOutOfRange
 	}
